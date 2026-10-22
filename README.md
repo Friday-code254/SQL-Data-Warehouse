@@ -56,7 +56,7 @@ Each CSV must use consistent LF or CRLF line endings and end with a line termina
 - `04_tests/integration/`: SQL Server acceptance scenarios.
 - `04_tests/performance/`: benchmark workload and SQL IO/time capture.
 - `05_analytics/`: documented, runnable SQL answers for sales trends, products, customers, segments, order value, and shipping.
-- `06_reports/`: benchmark evidence and project reports.
+- `06_reports/`: benchmark evidence and project reports, including the [sample data quality profile](06_reports/sample_data_quality_profile.md) for the supplied snapshot.
 - `07_orchestration/`: Windows scheduling wrapper and scheduler setup notes.
 - `.github/workflows/`: automated Python, SQL lint, SQL Server integration, smoke, and analytics checks.
 - `02_docs/`: architecture, column lineage, source mapping, data catalog, and design decisions.
