@@ -23,3 +23,4 @@
 - Fixed Linux UTF-16 sidecar preparation for source paths stored with Windows separators.
 - Fixed monthly order-value analytics to avoid invalid attributes on the unknown date member.
 - Expanded local-only environment-file ignore patterns while preserving `.env.example`.
+- Added reason-level sales reject amount reconciliation and a critical zero-residual source-to-Gold amount bridge, while keeping business disposition separate from accounting balance.

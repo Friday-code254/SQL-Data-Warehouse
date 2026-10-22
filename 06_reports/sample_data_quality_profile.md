@@ -19,7 +19,19 @@ This profile records what the supplied sample snapshot does under the current lo
 | Gold sales amount | 29,347,942 |
 | Source-to-Gold amount difference | 7,705 |
 
-The source amount difference equals the sum of `sls_sales` values on the 38 rejected rows in this snapshot. The six files contain 116,294 source rows in total.
+The source-to-Gold difference is fully reconciled for this snapshot:
+
+```text
+Source amount 29,355,647
+= Gold amount 29,347,942
+  + INVALID_DATE_OR_AMOUNT rejects 4,922
+  + NEGATIVE_AMOUNT rejects 2,471
+  + SALES_PRICE_MISMATCH rejects 312
+  + accepted-source-to-Silver adjustment 0
+  + Silver-to-Gold difference 0
+```
+
+The three reject amounts total **7,705**, exactly matching the source-to-Gold amount difference. The six files contain 116,294 source rows in total. SQL Server now persists each reason amount as `sales_reject_amount_<reason_code>`, the reject total as `rejected_sales_amount_total`, the accepted-source/Silver adjustment as `source_silver_sales_amount`, and an explicit zero-residual check as `source_gold_sales_amount_bridge`. The bridge is also a critical accounting quality gate. Run `04_tests/smoke_test.sql` to inspect the latest run's reconciliation rows.
 
 ## Sales rejects
 
@@ -54,4 +66,4 @@ The complete snapshot load succeeded with the rules above. A separate expected-f
 
 The hosted [SQL warehouse CI run](https://github.com/Friday-code254/SQL-Data-Warehouse/actions/runs/39827208082) completed successfully for commit `1d5bba633b4ddddaca47b4ddc8faf76043d25484`. The workflow runs the SQL Server integration cases, replay and failure-isolation checks, redeployment and SCD Type 2 checks, smoke tests, and all six analytics queries.
 
-No business validation rule was changed as part of this profile. Review the 38 rejected sales rows with the data owner before treating 60,360 as the approved sales fact count. The measured query results remain documented in [`performance_report.md`](performance_report.md); no SQL or index changes were made for this review.
+No business validation rule was changed as part of this profile. The amount is accounted for, but that is not business approval: a data owner still needs to decide whether the 38 rejected sales rows should be corrected, retained as exceptions, or excluded from the approved fact definition. The measured query results remain documented in [`performance_report.md`](performance_report.md); no Gold analytics or index changes were made for this reconciliation update.
