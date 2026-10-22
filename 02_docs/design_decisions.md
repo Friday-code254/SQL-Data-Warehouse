@@ -1,0 +1,18 @@
+# Design decisions
+
+1. **Snapshot model:** the six supplied CSVs are complete snapshots, not change-data feeds. Bronze retains one copy per source-file SHA-256. Silver and Gold represent the latest accepted snapshot. The runner's incremental mode compares hashes and reconciles snapshot deletions; it cannot recover intermediate changes between snapshots.
+2. **Safe ingestion:** all files must exist, be readable UTF-8 CSVs with exact expected headers and column counts, consistent line endings, and a final line terminator before SQL execution. SQL Server bulk-loads all six into temporary staging tables before its Bronze transaction. Source file hashes, sizes, names, and row counts are audited. Linux runs use hash-verified UTF-16 sidecars because SQL Server on Linux does not support the BULK INSERT CODEPAGE option.
+3. **Amount rules:** `DECIMAL(19,4)` is used in Silver/Gold. Zero price and sales are valid; quantity must be positive. If exactly one of sales or price is blank and the other plus quantity are valid, the missing value is derived and a correction code is stored. A derived unit price may differ from the exact division by at most `0.0001 * quantity` due to four-decimal rounding. Nonblank unparsable amounts, negative amounts, both missing, and mismatched totals are rejected.
+4. **Product validity dates:** product versions are ordered by product business key and start date. When an end date is blank or inconsistent with the next version, Silver rebuilds it as one day before the next start date (or clears an invalid end on the latest version) and stores a correction code. This makes the source's version sequence explicit rather than hiding the discrepancy.
+5. **Sales grain:** one row represents an order line for one product business key, one customer, and one order date. The provided CSV has no duplicates at `(sls_ord_num, sls_prd_key, sls_cust_id, sls_order_dt)`; order number alone is not unique. The Silver and Gold unique indexes enforce the grain.
+6. **Dimension history:** customer and product attributes use SCD Type 2 in materialized Gold tables. Since source change-effective timestamps are absent, `effective_start_date` records when the warehouse observed the change. Snapshot facts resolve to the current dimension version at load time.
+7. **Unmatched facts:** a sales row with no current customer or product dimension is excluded from Gold and recorded in `etl.rejected_records`. Reconciliation reports its count and amount; accepted fact rows have enforced foreign keys.
+8. **Migrations:** schema scripts use idempotent create/index checks and retain tutorial-era Silver/Bronze tables under `*_legacy` names. `00_setup/development_reset.sql` is the only script that drops the development database.
+9. **Performance:** indexes were selected for observed load and BI join/filter paths. `benchmark_gold.sql` records elapsed time and result volume and emits SQL Server IO/time statistics. The local SQL Server 2022 baseline/indexed comparison in `06_reports/performance_report.md` includes actual plans and logical reads; elapsed times are environment-specific and should be remeasured on a target server.
+
+## Fact and dimension grain
+
+- `gold.fact_sales`: one accepted sales line per order, product, customer, and order date.
+- `gold.dim_customers`: one row per customer version, with exactly one current row when the customer is present in the latest snapshot.
+- `gold.dim_products`: one row per product business-key version, with exactly one current row when the product is present.
+- `gold.dim_date`: one row per calendar date present between the snapshot's minimum and maximum order/shipping/due dates, plus key `0` for unknown dates.

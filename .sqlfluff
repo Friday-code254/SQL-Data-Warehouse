@@ -1,0 +1,4 @@
+[sqlfluff]
+dialect = tsql
+templater = raw
+max_line_length = 120
