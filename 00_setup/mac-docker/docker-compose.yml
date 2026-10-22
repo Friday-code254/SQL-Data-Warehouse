@@ -1,0 +1,17 @@
+# SQL Server 2022 for the Data Warehouse project. The read-only bind mount exposes source CSVs and generated UTF-16 bulk sidecars.
+# Double-click start.command on a Mac; this file is what it runs.
+services:
+  sql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    container_name: sql-dwh-project
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:?Set MSSQL_SA_PASSWORD before starting SQL Server}"
+    ports:
+      - "1433:1433"
+    volumes:
+      - sql-dwh-project-data:/var/opt/mssql
+      - ../../01_datasets:/sql/dwh_project/01_datasets:ro
+volumes:
+  sql-dwh-project-data:
