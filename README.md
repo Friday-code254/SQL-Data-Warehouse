@@ -1,119 +1,174 @@
 # SQL Data Warehouse and Analytics Project
 
-This project ingests CRM and ERP CSV snapshots into SQL Server Bronze, Silver, and Gold layers. The supplied tutorial project is retained as the starting point and its MIT license remains in [LICENSE](LICENSE). This upgrade adds auditable orchestration, safer snapshot ingestion, incremental current-state upserts, SCD Type 2 dimensions, a date dimension, quality gates, reconciliation, and measured performance tooling.
+[![Warehouse CI](https://github.com/Friday-code254/SQL-Data-Warehouse/actions/workflows/warehouse-ci.yml/badge.svg)](https://github.com/Friday-code254/SQL-Data-Warehouse/actions/workflows/warehouse-ci.yml)
+![SQL Server 2022](https://img.shields.io/badge/SQL%20Server-2022-CC2927?logo=microsoftsqlserver&logoColor=white)
 
-## Requirements
+This project combines customer, product, and sales data from CRM and ERP CSV files in a SQL Server data warehouse. It checks the files, loads and cleans the data, and prepares it for reporting.
 
-- SQL Server 2022 (the Docker configuration uses the SQL Server 2022 image); the CSV bulk syntax requires SQL Server 2017 or later.
-- SQLCMD utilities for installation, and the ODBC Driver 18 for SQL Server for the Python runner.
-- Python 3.9 or later.
-- The SQL Server service account must be able to read the six CSV files. On Linux it must also be able to read the runner's temporary .sql_bulk_stage directory. Local Python access alone is not sufficient for BULK INSERT.
-- The deployment account needs database/schema/procedure creation rights. The pipeline login needs execution rights plus bulk-operation permission. SQL Server on Linux before 2022 CU24 may require `sysadmin` for bulk loading; use a current supported CU for `bulkadmin` / `ADMINISTER BULK OPERATIONS` support.
+## What the project does
 
-For Linux ODBC setup, follow Microsoft's [ODBC Driver installation instructions](https://learn.microsoft.com/sql/connect/odbc/linux-mac/installing-the-microsoft-odbc-driver-for-sql-server). The CI workflow installs Driver 18 on Ubuntu 24.04 and runs a disposable SQL Server 2022 Developer container.
+- Checks all six input files before loading them.
+- Keeps a record of each source file and load, so rerunning the same files does not add duplicate Bronze data.
+- Cleans and validates records. Rejected rows are saved with a reason code for review.
+- Builds customer, product, date, and sales tables for analysis.
+- Keeps a history of customer and product changes with SCD Type 2.
+- Checks row counts and sales amounts as data moves through the warehouse.
+- Includes automated tests, GitHub Actions CI, six curated analytics queries, and 13 additional learning-path queries.
 
-## Install
+## How the data moves
 
-Run from this repository's root so the SQLCMD includes resolve:
-
-```powershell
-sqlcmd -S localhost -E -i 00_setup/install.sql
+```mermaid
+flowchart LR
+    A[CRM and ERP CSV files] --> B[File checks]
+    B --> C[Bronze: raw data]
+    C --> D[Silver: cleaned data]
+    D --> E[Gold: reporting tables]
+    E --> F[Analytics queries]
+    C -.-> G[Load logs and quality checks]
+    D -.-> G
+    E -.-> G
 ```
 
-For SQL authentication, use `sqlcmd -S <server> -U <user> -C -i 00_setup/install.sql` and enter the password when prompted. Installation creates `DataWarehouse` only if it does not exist, preserves existing tutorial tables as `*_legacy`, and can be run repeatedly. It does not clear warehouse data.
+- **Bronze** keeps the source rows and file details.
+- **Silver** converts and checks the data. Rows that fail a rule are logged with a reason.
+- **Gold** contains the sales fact table and customer, product, and date dimensions.
 
-`00_setup/development_reset.sql` is a **development-only destructive reset**. Do not use it where existing data must be retained.
+## Source files
 
-### Docker on macOS
+| File | Data |
+|---|---|
+| `source_crm/cust_info.csv` | Customer details |
+| `source_crm/prd_info.csv` | Products and product dates |
+| `source_crm/sales_details.csv` | Sales, quantities, prices, and dates |
+| `source_erp/CUST_AZ12.csv` | Customer birth date and gender |
+| `source_erp/LOC_A101.csv` | Customer country |
+| `source_erp/PX_CAT_G1V2.csv` | Product categories and subcategories |
 
-Run `00_setup/mac-docker/start.command`. It prompts for a strong `sa` password if `MSSQL_SA_PASSWORD` is unset and mounts the dataset directory read-only at `/sql/dwh_project/01_datasets`. Install the schema from the repository root using the container's SQLCMD tool or a host SQLCMD connection. In your local `.env`, set SQL authentication and `SQLSERVER_DATASET_ROOT=/sql/dwh_project/01_datasets`.
+## Data quality in the supplied files
 
-## Configure and run
+The figures below are from the sample data included in this project. See the [data quality report](06_reports/sample_data_quality_profile.md) for more detail.
+
+| Sales results | Rows | Amount |
+|---|---:|---:|
+| Source sales | 60,398 | 29,355,647 |
+| Accepted in Gold | 60,360 | 29,347,942 |
+| Rejected sales | 38 | 7,705 |
+
+The 38 rejected sales rows have these reasons:
+
+| Reason | Rows | Amount |
+|---|---:|---:|
+| Invalid order date | 19 | 4,922 |
+| Negative sales or price | 7 | 2,471 |
+| Sales do not match quantity × price | 12 | 312 |
+
+The rejected amounts explain the full **7,705** difference between source and Gold. There is no unexplained amount left. This balance does not mean the rules are business-approved. A data owner should decide whether these rows should be corrected, kept as exceptions, or excluded from the approved sales total.
+
+The sample run also recorded 26 rejected customer and customer-enrichment rows. It corrected 200 product end dates: 102 were rebuilt from the next product version and 98 were cleared for the latest versions. These product corrections are marked and reported as warnings.
+
+## How to run
+
+You need SQL Server 2022, SQLCMD, Python 3.9 or later, and Microsoft ODBC Driver 18 for SQL Server. SQL Server must be able to read the six CSV files. Its file path can be different from the path on your computer.
+
+Run commands from the project folder.
+
+### 1. Install the database objects
+
+For Windows authentication:
+
+```powershell
+sqlcmd -S localhost -E -b -i 00_setup/install.sql
+```
+
+For SQL authentication, SQLCMD will prompt for your password:
+
+```powershell
+sqlcmd -S <server> -U <user> -C -b -i 00_setup/install.sql
+```
+
+The installer can be run again and does not clear existing warehouse data.
+
+### 2. Set up Python
 
 ```powershell
 Copy-Item .env.example .env
 python -m pip install -r requirements.txt
+```
+
+Edit `.env` with your SQL Server connection details. The `.env` file is ignored by Git, so credentials should stay there and must not be committed. Set `SQLSERVER_DATASET_ROOT` if SQL Server sees the CSV files in a different location. See [`.env.example`](.env.example) for the available settings.
+
+### 3. Run the pipeline
+
+Use a full load for the first run:
+
+```powershell
 python 03_scripts/etl/run_pipeline.py --mode full
 ```
 
-Edit `.env` with your server, database, driver, and authentication settings. `.env` is ignored by Git. On Windows, integrated authentication is the default. For SQL authentication, set `SQLSERVER_TRUSTED_CONNECTION=no`, `SQLSERVER_USER`, and `SQLSERVER_PASSWORD`. Set `SQLSERVER_DATASET_ROOT` when the SQL Server service sees the files at a different absolute path than Python does.
+For later complete snapshots, use:
 
-Required source paths, headers, and column counts are centralized in `etl.source_config`. Update that table when a dataset's relative path or schema changes; the runner reads the same settings before preflight.
+```powershell
+python 03_scripts/etl/run_pipeline.py --mode incremental
+```
 
-`--mode full` rebuilds the current Silver snapshot transactionally and refreshes Gold while preserving Bronze batches and Gold surrogate-key history. `--mode incremental` applies row-hash upserts and snapshot deletion reconciliation. Both modes require a complete snapshot of all six files. Replaying the same unchanged files reuses the original Bronze batches and does not duplicate raw rows.
+Both modes need all six files. A full load rebuilds the current Silver data and refreshes Gold. An incremental load applies new, changed, and removed rows from the new complete snapshot. Bronze history is kept.
 
-The runner reads file paths and expected headers from `etl.source_config`, then checks source existence, UTF-8 CSV structure, exact headers, column counts, row counts, line endings, file sizes, and SHA-256 hashes before opening a pipeline run. SQL Server verifies each original file checksum again and stages every file before committing Bronze data. On Linux, the runner creates a per-run UTF-16 sidecar for each CSV; SQL Server verifies each sidecar checksum before loading it. The sidecars are removed after the run, and the Mac Docker setup bind-mounts their directory so SQL Server can read them. If preflight fails, a sanitized failed run is recorded.
+> `00_setup/development_reset.sql` drops the database. Use it only for a disposable development database.
 
-Each CSV must use consistent LF or CRLF line endings and end with a line terminator. This avoids SQL Server bulk import silently omitting a final record or retaining a carriage return in a field.
+## Checks and analytics
 
-## Script layout
-
-- `03_scripts/init_database.sql`: safe database/schema bootstrap.
-- `03_scripts/migrations/`: legacy-preservation migration and workload-aligned indexes.
-- `03_scripts/{bronze,silver,gold}/`: layer DDL and load procedures.
-- `03_scripts/etl/`: control-plane tables, pipeline orchestration, reconciliation, and quality gates.
-- `04_tests/unit/`: repeatable Python input-validation tests.
-- `04_tests/integration/`: SQL Server acceptance scenarios.
-- `04_tests/performance/`: benchmark workload and SQL IO/time capture.
-- `05_analytics/`: documented, runnable SQL answers for sales trends, products, customers, segments, order value, and shipping.
-- `06_reports/`: benchmark evidence and project reports, including the [sample data quality profile](06_reports/sample_data_quality_profile.md) for the supplied snapshot.
-- `07_orchestration/`: Windows scheduling wrapper and scheduler setup notes.
-- `.github/workflows/`: automated Python, SQL lint, SQL Server integration, smoke, and analytics checks.
-- `02_docs/`: architecture, column lineage, source mapping, data catalog, and design decisions.
-
-## Tests and verification
-
-Run the local unit suite with:
+Run the Python unit tests with:
 
 ```powershell
 python -m unittest discover -s 04_tests/unit -v
 ```
 
-After a pipeline run, execute `04_tests/smoke_test.sql` in `DataWarehouse` to inspect the latest run, quality outcomes, and reconciliations. Use `04_tests/integration/acceptance_cases.md` for replay, failure, migration, SCD2, invalid-data, and stable-key scenarios. The SQL Server acceptance cases require a disposable development database and file access for the SQL Server service account.
-
-Opt-in integration tests exercise snapshot replay and failure isolation against SQL Server. Set `RUN_SQL_INTEGRATION=1` and run `python -m unittest discover -s 04_tests/integration -p "test_*.py" -v` only against a disposable development database.
-
-For performance measurements, enable Actual Execution Plan in SSMS and run `04_tests/performance/benchmark_gold.sql`. It records durations and result sizes in `etl.performance_results` and emits `STATISTICS IO/TIME`. The [performance report](06_reports/performance_report.md) contains a captured baseline-versus-indexed comparison on SQL Server 2022; rerun it under controlled conditions before applying those local results to another environment.
-
-## Curated analytics
-
-Run a query from the repository root, for example:
+For SQL Server integration tests, use a disposable development database. These tests change data:
 
 ```powershell
-sqlcmd -S localhost -E -i 05_analytics/monthly_sales_mom.sql
+$env:RUN_SQL_INTEGRATION = "1"
+python -m unittest discover -s 04_tests/integration -p "test_*.py" -v
 ```
 
-All six analytics scripts state the question, metric definitions, and interpretation limits at the top. They run against the materialized Gold tables; the query descriptions and metric details are in [05_analytics/README.md](05_analytics/README.md).
+After a successful load, run the smoke check:
 
-## Scheduling and continuous integration
+```powershell
+sqlcmd -S localhost -E -b -d DataWarehouse -i 04_tests/smoke_test.sql
+```
 
-On Windows, schedule `07_orchestration/run_pipeline.ps1 -Mode incremental` with Task Scheduler after a complete snapshot arrives. The wrapper logs output and returns the runner's exit code. See [the scheduler guide](07_orchestration/README.md). For other schedulers, call the Python CLI directly and preserve its return code.
+The GitHub Actions workflow runs the project checks against a temporary SQL Server database. It also checks replay, failure handling, redeployment, SCD Type 2 changes, and the six curated queries in `05_analytics/`. See [the workflow](.github/workflows/warehouse-ci.yml).
 
-The GitHub Actions workflow in `.github/workflows/warehouse-ci.yml` checks project structure, lints the analytics SQL, runs the Python unit tests, installs the schema in a disposable SQL Server 2022 container, runs the complete pipeline, executes the smoke and analytics queries, and checks data-preserving redeployment, SCD2, replay, and failure isolation. It uses a generated test-only SQL password and does not need repository secrets.
+The six Gold queries cover:
 
-To run the same checks locally, install `requirements-dev.txt`, run the Python unit and integration commands above against a disposable database, execute every script in `05_analytics/`, then run `04_tests/smoke_test.sql`. The local integration tests must never target a shared or production database.
+- Monthly sales and month-over-month changes
+- Product and category performance
+- Customer lifetime sales
+- Sales by country and customer segment
+- Order value and quantity
+- Order and shipping trends
 
-## Fresh setup and reset
+Run a query from the project folder, for example:
 
-1. Install SQL Server 2022 (or a compatible supported SQL Server), SQLCMD, Python, and ODBC Driver 18.
-2. From the repository root, install the warehouse with `sqlcmd -S <server> -E -i 00_setup/install.sql`. This is repeatable and preserves loaded data.
-3. Copy `.env.example` to `.env`, configure the connection and SQL Server-visible dataset path, then install runtime dependencies with `python -m pip install -r requirements.txt`.
-4. Run `python 03_scripts/etl/run_pipeline.py --mode full`. Use `--mode incremental` for later complete snapshots.
-5. Run `04_tests/smoke_test.sql` and the curated queries. Inspect the ETL audit tables for row counts, rejects, reconciliations, and failures.
+```powershell
+sqlcmd -S localhost -E -b -d DataWarehouse -i 05_analytics/monthly_sales_mom.sql
+```
 
-Only for a disposable development database, `sqlcmd -S <server> -E -i 00_setup/development_reset.sql` drops the database; follow it with `00_setup/install.sql` and a fresh full pipeline run. Do not use the reset script where warehouse data must be retained.
+For 13 more exploratory and advanced examples, see the [analytics learning path](08_analytics_learning_path/README.md). These extra scripts use the same Gold tables and are separate from the six queries run by CI.
 
-## Logs and troubleshooting
+The [performance report](06_reports/performance_report.md) records benchmark timings and logical reads. Those results are from one SQL Server environment and may differ elsewhere.
 
-- `etl.pipeline_runs`: one run outcome and sanitized failure summary.
-- `etl.table_load_logs`: per-table inserted/updated/deleted/rejected counts and durations.
-- `etl.data_quality_results`: named gate rule, severity, actual/expected values, and outcome.
-- `etl.rejected_records`: source fingerprint and reason code; raw values are not copied.
-- `etl.reconciliation_results`: source, Bronze, Silver, and Gold counts and sales totals.
-- `etl.source_file_history`: checksum-based replay history.
+## Project folders
 
-If the runner passes but SQL bulk loading fails, confirm the configured SQL dataset root exists from the SQL Server host/container and that its service account has read permission. For malformed files, compare the exact headers to the values in `etl.source_config`. If a critical gate fails, inspect `etl.data_quality_results` and `etl.rejected_records`; the previous successful Gold state remains committed.
+| Folder | Contents |
+|---|---|
+| `00_setup/` | Database installer, development reset, and Docker helper |
+| `01_datasets/` | CRM and ERP CSV files |
+| `02_docs/` | Architecture, source mapping, and design notes |
+| `03_scripts/` | SQL tables, ETL procedures, and quality checks |
+| `04_tests/` | Python tests, SQL Server checks, and benchmarks |
+| `05_analytics/` | Gold analytics queries |
+| `06_reports/` | Data quality and performance reports |
+| `07_orchestration/` | Windows scheduling scripts and instructions |
+| `08_analytics_learning_path/` | Additional exploratory SQL and customer/product report views |
 
-## Attribution
-
-The included source CSVs, diagrams, starter SQL, documentation, and original license came from the Data With Baraa SQL Data Warehouse project. The orchestration, logging, safer loading, dimensional history, reconciliation, testing, and performance additions are project upgrades. See [LICENSE](LICENSE) for the original MIT terms and attribution.
+The source files, diagrams, starter SQL, and original documentation come from the [Data With Baraa SQL Data Warehouse project](https://github.com/DataWithBaraa/sql-data-warehouse-project). The additional analytics scripts are adapted from the [Data With Baraa SQL Data Analytics project](https://github.com/DataWithBaraa/sql-data-analytics-project). Both upstream MIT copyright notices are included in [`LICENSE`](LICENSE).
