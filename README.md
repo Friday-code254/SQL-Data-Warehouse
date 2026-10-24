@@ -14,6 +14,7 @@ This project combines customer, product, and sales data from CRM and ERP CSV fil
 - Keeps a history of customer and product changes with SCD Type 2.
 - Checks row counts and sales amounts as data moves through the warehouse.
 - Includes automated tests, GitHub Actions CI, six curated analytics queries, and 13 additional learning-path queries.
+- Includes automated tests, GitHub Actions CI, and six analytics queries.
 
 ## How the data moves
 
@@ -117,6 +118,17 @@ Both modes need all six files. A full load rebuilds the current Silver data and 
 
 ## Checks and analytics
 
+
+```powershell
+python 03_scripts/etl/run_pipeline.py --mode incremental
+```
+
+Both modes need all six files. A full load rebuilds the current Silver data and refreshes Gold. An incremental load applies new, changed, and removed rows from the new complete snapshot. Bronze history is kept.
+
+> `00_setup/development_reset.sql` drops the database. Use it only for a disposable development database.
+
+## Checks and analytics
+
 Run the Python unit tests with:
 
 ```powershell
@@ -137,6 +149,7 @@ sqlcmd -S localhost -E -b -d DataWarehouse -i 04_tests/smoke_test.sql
 ```
 
 The GitHub Actions workflow runs the project checks against a temporary SQL Server database. It also checks replay, failure handling, redeployment, SCD Type 2 changes, and the six curated queries in `05_analytics/`. See [the workflow](.github/workflows/warehouse-ci.yml).
+The GitHub Actions workflow runs the project checks against a temporary SQL Server database. It also checks replay, failure handling, redeployment, SCD Type 2 changes, and all analytics queries. See [the workflow](.github/workflows/warehouse-ci.yml).
 
 The six Gold queries cover:
 
@@ -155,6 +168,10 @@ sqlcmd -S localhost -E -b -d DataWarehouse -i 05_analytics/monthly_sales_mom.sql
 
 For 13 more exploratory and advanced examples, see the [analytics learning path](08_analytics_learning_path/README.md). These extra scripts use the same Gold tables and are separate from the six queries run by CI.
 
+```powershell
+sqlcmd -S localhost -E -b -d DataWarehouse -i 05_analytics/monthly_sales_mom.sql
+```
+
 The [performance report](06_reports/performance_report.md) records benchmark timings and logical reads. Those results are from one SQL Server environment and may differ elsewhere.
 
 ## Project folders
@@ -172,3 +189,5 @@ The [performance report](06_reports/performance_report.md) records benchmark tim
 | `08_analytics_learning_path/` | Additional exploratory SQL and customer/product report views |
 
 The source files, diagrams, starter SQL, and original documentation come from the [Data With Baraa SQL Data Warehouse project](https://github.com/DataWithBaraa/sql-data-warehouse-project). The additional analytics scripts are adapted from the [Data With Baraa SQL Data Analytics project](https://github.com/DataWithBaraa/sql-data-analytics-project). Both upstream MIT copyright notices are included in [`LICENSE`](LICENSE).
+
+The source files, diagrams, starter SQL, and original documentation come from the [Data With Baraa SQL Data Warehouse project](https://github.com/DataWithBaraa/sql-data-warehouse-project). This project keeps its original MIT license and attribution. See [`LICENSE`](LICENSE).
