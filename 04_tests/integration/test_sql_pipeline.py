@@ -91,6 +91,20 @@ class SqlPipelineAcceptanceTests(unittest.TestCase):
         self.assertEqual(status, "FAILED")
         self.assertIn("Bronze source staging failed", error_summary)
 
+    def test_sample_source_to_gold_sales_amount_is_explained_by_reject_reason(self):
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT TOP(1) run_id FROM etl.pipeline_runs WHERE status='SUCCEEDED' ORDER BY started_at DESC")
+        run_id = cursor.fetchone()[0]
+        cursor.execute("SELECT metric_name,source_value,target_value,difference FROM etl.reconciliation_results WHERE run_id=?", run_id)
+        metrics = {row.metric_name: row for row in cursor.fetchall()}
+
+        self.assertEqual(metrics["source_gold_sales_amount"].difference, 7705)
+        self.assertEqual(metrics["sales_reject_amount_INVALID_DATE_OR_AMOUNT"].difference, 4922)
+        self.assertEqual(metrics["sales_reject_amount_NEGATIVE_AMOUNT"].difference, 2471)
+        self.assertEqual(metrics["sales_reject_amount_SALES_PRICE_MISMATCH"].difference, 312)
+        self.assertEqual(metrics["rejected_sales_amount_total"].difference, 7705)
+        self.assertEqual(metrics["source_gold_sales_amount_bridge"].difference, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

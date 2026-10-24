@@ -11,4 +11,6 @@ Each script runs against the materialized `DataWarehouse` Gold schema and starts
 | `order_value_quantity.sql` | What are monthly order count, average order value, and units per order? |
 | `order_shipping_trends.sql` | How do order volume, fulfillment time, and late shipments trend? |
 
-Run one query from the repository root with `sqlcmd -S <server> -E -i 05_analytics/monthly_sales_mom.sql`. The CI workflow executes every analytics script against a disposable SQL Server database after loading the sample snapshots.
+Run one query from the repository root with `sqlcmd -S <server> -E -i 05_analytics/monthly_sales_mom.sql`. The CI workflow executes these six curated queries against a disposable SQL Server database after loading the sample snapshots.
+
+For a step-by-step collection of 13 additional exploratory and advanced queries, see the [analytics learning path](../08_analytics_learning_path/README.md). Those scripts also use the Gold schema; the report scripts create or update `gold.report_customers` and `gold.report_products` views.
